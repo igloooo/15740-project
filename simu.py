@@ -8,8 +8,9 @@ To-do list:
 #4 debugging
 #5 other optimizations
 #6 fix random seeds
-7 read data and generate datasets
-8 debug branches
+#7 read data and generate datasets
+#8 debug branches
+9 look closely at his program!
 """
 
 import numpy as np
@@ -17,6 +18,7 @@ from numba import jit
 import matplotlib.pyplot as plt
 from collections import namedtuple
 import pickle
+import json
 import os
 import logging
 from functools import partial
@@ -74,44 +76,72 @@ def load_pkl_data(data_path):
     data = {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
     return data
 
-def load_str_data(data_path):
+def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
     """
     :param data_path: here data_path is a directory, with subdirs data_path/Graphs and data_path/Samples
+    :param gen_n_samples: if =-1, sample is from data, no need to generate; otherwise generate n samples
     :return: data
     """
     graph_dir = os.path.join(data_path, 'Graphs')
     sample_dir = os.path.join(data_path, 'Samples')
     # look for all subdirs
     graph_files_names = os.listdir(graph_dir)
-    graph_names = [name[:-4] for name in graph_files_names if name.endswith('.txt')]
+    graph_names = [name for name in graph_files_names]
     graphs_full = []
     branch_samples = []
     for name in graph_names:
         with open(name, 'r') as f:
-            line = f.readline()
-            graph_dict = eval(line)
-            n_nodes = len(graph_dict)
-            nodes = [Graph_Node(i, graph_dict[i][0]) for i in range(n_nodes)]
-            for i in range(n_nodes):
-                nodes[i].branches = graph_dict[i][1]
-        with open(name + '_sample', 'r') as f:
-            lines = f.readlines()
-            samples = [np.array(eval(line)) for line in lines]
-            for sample in samples:
-                sample.flags.writeable = False
+            #line = f.readline()
+            #graph_dict = eval(line)
+            graph_dict = json.load(f)
+            graph_dict = dict([(int(key), value) for key, value in graph_dict.items()]) # keys are str, convert str to int
+            ### append a termination node, assume it is not added there
+            graph_dict[-1] = [None, [None, None]]
+            graph_dict[max(graph_dict.keys())][1].append(-1)
+            #print(graph_dict.items())
+            ### I make "nodes" a dictionary instead of list, I hope it will not cause any bug
+            nodes = dict([(id, Graph_Node(id, graph_dict[id][0])) for id in graph_dict.keys()])
+            for id, node in nodes.items():
+                node.branches = [nodes[next_id] for next_id in graph_dict[id][1]]
+        if gen_n_samples < 0:###
+            with open(name + '_sample', 'r') as f:
+                #lines = f.readlines()
+                #samples = [np.array(eval(line)) for line in lines]
+                samples = json.load(f)
+                samples = [np.array(sample) for sample in samples]
+                for sample in samples:
+                    sample.flags.writeable = False
+        else:
+            samples = []
+            for n in range(gen_n_samples):
+                cur_node = nodes[0]
+                seq = []
+                while(cur_node.id >= 0):
+                    # branch with equal probability
+                    next_branch = np.random.randint(0, len(cur_node.branches))
+                    seq.append(next_branch)
+                    cur_node = cur_node.branches[next_branch]
+                seq = np.array(seq)
+                seq.flags.writeable = False
+                samples.append(seq)
         graphs_full.append(nodes)
         branch_samples.append(samples)
     graphs = [nodes[0] for nodes in graphs_full] ## assume id-0 is the head node
-    return {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
+    data = {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
+    with open(cp_path) as f:
+        pickle.dump(data, f)
+    return data
 
 # main simulation section
 # recover and save
-def simulate(num_stp, settings, data_path, policy, record_per_count):
+def simulate(num_stp, settings, data_path, policy, record_per_count, json_loader=None):
     """
     :param num_stp: number of iterations
     :param settings: the Settings object, contain hyperparameters of the model
     :param data: dictionary, {'graphs': graphs, 'branch_samples': branch_samples}
     :param policy: function handle of the policy
+    :param record_per_count: save time and completion counts every this number of completions
+    :param json_loader: additional parameters need to be specified if use json loader
     :return:
     """
     timer_debug = 0
@@ -119,7 +149,12 @@ def simulate(num_stp, settings, data_path, policy, record_per_count):
     n_skip = settings.n_skip
     beta = settings.beta
     alpha = settings.alpha
-    data = load_pkl_data(data_path)
+    if json_loader is None:
+        data = load_pkl_data(data_path)
+    elif json_loader is True:
+        data = load_json_data(data_path)
+    else:
+        data = load_json_data(data_path, json_loader[0], json_loader[1])
     graphs = data['graphs']
     branch_samples = data['branch_samples']
     n_progs = len(graphs)
@@ -297,28 +332,18 @@ if __name__ == '__main__':
     static_best_fit = partial(policy_best_fit, fix=20)
     static_fcfs = partial(policy_fcfs, fix=20)
 
-    dataset_dir = './datasets'
-    dataset_name = 'branch_loop.pkl'
-    data_path = os.path.join(dataset_dir, dataset_name)
+    # dataset_dir = './datasets'
+    # dataset_name = 'sequential.pkl'
+    # data_path = os.path.join(dataset_dir, dataset_name)
+    data_path = '.'
+
+    if not os.path.exists('./checkpoints'):
+        os.mkdir('./checkpoints')
 
     time_begin = time()
-    t_globs, count_comps = simulate(10**5, settings1, data_path, policy_best_fit, 10)
+    t_globs, count_comps = simulate(10**5, settings1, data_path, policy_best_fit, record_per_count=10, ['./checkpoints/cp.pkl', 200])
     time_end = time()
     print('time = ', time_end - time_begin)
     print('throughput = ', count_comps[-1] / t_globs[-1])
     plt.plot(t_globs, count_comps / t_globs)
     plt.show()
-
-    # timing analysis: n_skip=30, M = 100, alpha=0.5, beta=1.5, sequential 30 phase
-    # 1e4 iterations, around 5~9 sec, static_fcfs
-    # generating random variables takes 1.4% of the time
-    # policy takes 0.6% of the time
-    # restarting job takes 0.2% of the time
-    # updatig node takes 0.5% of the time
-    # argmin and min takes 2% of the time
-    # generating rates takes 5%
-    # preprocessing takes 0.02%
-    # logging takes > 90% of the time!
-    # after commenting out logging, ~0.5 sec
-    # policy takes 8% time
-    # computing rates, generate r.v., take min takes 80%-90% of the time
