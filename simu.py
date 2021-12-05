@@ -14,7 +14,7 @@ To-do list:
 """
 
 import numpy as np
-from numba import jit
+#from numba import jit
 import matplotlib.pyplot as plt
 from collections import namedtuple
 import pickle
@@ -90,7 +90,7 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
     graphs_full = []
     branch_samples = []
     for name in graph_names:
-        with open(name, 'r') as f:
+        with open(graph_dir + '/' + name, 'r') as f:
             #line = f.readline()
             #graph_dict = eval(line)
             graph_dict = json.load(f)
@@ -102,7 +102,8 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
             ### I make "nodes" a dictionary instead of list, I hope it will not cause any bug
             nodes = dict([(id, Graph_Node(id, graph_dict[id][0])) for id in graph_dict.keys()])
             for id, node in nodes.items():
-                node.branches = [nodes[next_id] for next_id in graph_dict[id][1]]
+                #print(id, node, graph_dict[id][1])
+                node.branches = [nodes[next_id] for next_id in graph_dict[id][1] if next_id is not None]
         if gen_n_samples < 0:###
             with open(name + '_sample', 'r') as f:
                 #lines = f.readlines()
@@ -128,7 +129,7 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
         branch_samples.append(samples)
     graphs = [nodes[0] for nodes in graphs_full] ## assume id-0 is the head node
     data = {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
-    with open(cp_path) as f:
+    with open(cp_path, 'wb') as f:
         pickle.dump(data, f)
     return data
 
@@ -202,8 +203,10 @@ def simulate(num_stp, settings, data_path, policy, record_per_count, json_loader
         #     job_states = [node.id for node in job_nodes]
         #     logging.info('cur states={}, last event={}'.format(job_states, i))
         # compute rate
-        speedups = np.clip(cur_mem-alpha * job_sizes, EPS,  (beta-alpha)*job_sizes)
+        speedups = np.clip(cur_mem-alpha * job_sizes, EPS, np.maximum((beta-alpha)*job_sizes, EPS))
+        #print(job_sizes, speedups)
         scales = job_sizes / speedups
+        # print(EPS)
         # sample next event
         ev_times = np.random.exponential(1, [n_skip]) * scales # generate exponential on a less frequent bases
         # getting the event i
@@ -258,6 +261,7 @@ def simulate(num_stp, settings, data_path, policy, record_per_count, json_loader
             #     i, count_comp, t_glob, job_paths[i]))
             # order_str = traverse_ids(head_node, n_skip)
             # logging.warning('current order {}'.format(order_str))
+    # print(count_comp, ts)
     ts = np.array(ts)
     counts = np.array(counts)
     return ts, counts
@@ -327,21 +331,46 @@ def policy_fcfs(M, settings, job_sizes, arrival_orders, fix=-1):
 
 if __name__ == '__main__':
     #np.random.seed(0)
-    settings1 = Settings(n_skip=30, M = 100, alpha=0.5, beta=1.5)
+    settings1 = Settings(n_skip=30, M = 20, alpha=0.5, beta=1.5)
 
-    static_best_fit = partial(policy_best_fit, fix=20)
-    static_fcfs = partial(policy_fcfs, fix=20)
+    static_best_fit = partial(policy_best_fit, fix=6)
+    static_fcfs = partial(policy_fcfs, fix=6)
+    total_time = 10**6
 
     # dataset_dir = './datasets'
     # dataset_name = 'sequential.pkl'
     # data_path = os.path.join(dataset_dir, dataset_name)
-    data_path = '.'
+    data_path = '../Project'
 
     if not os.path.exists('./checkpoints'):
         os.mkdir('./checkpoints')
 
     time_begin = time()
-    t_globs, count_comps = simulate(10**5, settings1, data_path, policy_best_fit, record_per_count=10, ['./checkpoints/cp.pkl', 200])
+    t_globs, count_comps = simulate(total_time, settings1, data_path, static_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
+
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, static_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
+
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
+
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
     time_end = time()
     print('time = ', time_end - time_begin)
     print('throughput = ', count_comps[-1] / t_globs[-1])
