@@ -106,7 +106,7 @@ def load_str_data(data_path):
 
 # main simulation section
 # recover and save
-def simulate(num_stp, settings, data_path, policy):
+def simulate(num_stp, settings, data_path, policy, record_per_count):
     """
     :param num_stp: number of iterations
     :param settings: the Settings object, contain hyperparameters of the model
@@ -129,6 +129,8 @@ def simulate(num_stp, settings, data_path, policy):
     t_glob = 0
     # maintain a counter
     count_comp = 0
+    ts = []
+    counts = []
     # initialize:
     # type of jobs in the head of line, nodes in the graph, sample path,
     # index in the sample path, size, next job in the queue,
@@ -159,9 +161,11 @@ def simulate(num_stp, settings, data_path, policy):
         # update memory allocation
         cur_mem = policy(M, settings, job_sizes, [job_orders, head_node, tail_node]) # this is specific to each policy
         ## logging lines for debug
-        # if cur_stp > 0:
+        #if cur_stp > 0:
         #     order_str = traverse_ids(head_node, n_skip)
         #     logging.info('cur_stp={}, last event={}, \n cur_order={}, \n job_sizes={}, \n cur_mem={}'.format(cur_stp, i, order_str, job_sizes, cur_mem))
+        #     job_states = [node.id for node in job_nodes]
+        #     logging.info('cur states={}, last event={}'.format(job_states, i))
         # compute rate
         speedups = np.clip(cur_mem-alpha * job_sizes, EPS,  (beta-alpha)*job_sizes)
         scales = job_sizes / speedups
@@ -184,10 +188,14 @@ def simulate(num_stp, settings, data_path, policy):
         else:
             # the job has finished, counter+1, regenerate
             count_comp += 1
+            if count_comp % record_per_count == 0:
+                ts.append(t_glob)
+                counts.append(count_comp)
             # update job type
             new_type = np.random.randint(0, n_progs)
             job_types[i] = new_type
-            job_paths[i] = branch_samples[new_type][np.random.randint(0, n_paths)]
+            new_path_ind = np.random.randint(0, n_paths)
+            job_paths[i] = branch_samples[new_type][new_path_ind]
             new_node = graphs[new_type]
             job_nodes[i] = new_node
             job_sizes[i] = new_node.size
@@ -211,10 +219,13 @@ def simulate(num_stp, settings, data_path, policy):
                 order_node.next = None
                 tail_node = order_node
             ### logging lines for debug
-            # logging.warning('restart job {}, counter = {}, t={}'.format(i, count_comp, t_glob))
+            # logging.warning('restart job {}, counter = {}, t={}, new path={}'.format(
+            #     i, count_comp, t_glob, job_paths[i]))
             # order_str = traverse_ids(head_node, n_skip)
             # logging.warning('current order {}'.format(order_str))
-    return count_comp, t_glob
+    ts = np.array(ts)
+    counts = np.array(counts)
+    return ts, counts
 
 def policy_best_fit(M, settings, job_sizes, arrival_orders, fix=-1):
     """
@@ -287,11 +298,16 @@ if __name__ == '__main__':
     static_fcfs = partial(policy_fcfs, fix=20)
 
     dataset_dir = './datasets'
-    dataset_name = 'sequential.pkl'
+    dataset_name = 'branch_loop.pkl'
     data_path = os.path.join(dataset_dir, dataset_name)
 
-    count_comp, t_glob = simulate(3*10**5, settings1, data_path, static_fcfs)
-    print(count_comp / t_glob)
+    time_begin = time()
+    t_globs, count_comps = simulate(10**5, settings1, data_path, policy_best_fit, 10)
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
 
     # timing analysis: n_skip=30, M = 100, alpha=0.5, beta=1.5, sequential 30 phase
     # 1e4 iterations, around 5~9 sec, static_fcfs
