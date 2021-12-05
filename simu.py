@@ -47,33 +47,35 @@ Settings = namedtuple('Settings', ['n_skip', 'M', 'alpha', 'beta'])
 
 
 # loading inputs: annotated graphs, list of branch decisions
-#graphs = [None] * n_progs
-#branch_samples = [[None]*n_paths] * n_progs
-dataset_dir = './datasets'
-dataset_name = 'sequential.pkl'
 
-with open(os.path.join(dataset_dir, dataset_name), 'rb') as f:
-    dataset = pickle.load(f)
+def load_data(data_path):
+    """
+    :param data_path: the path for dataset
+    :return: graphs = [] * n_progs, branch_samples = [[]*n_paths] * n_progs
+    """
+    with open(data_path, 'rb') as f:
+        dataset = pickle.load(f)
 
-graphs_full = dataset['graphs_full']
-branch_samples = dataset['branch_samples']
-# number of programs, and number of sample paths collected for each program
-n_progs = len(graphs_full)
-n_paths = len(branch_samples[0])
-# taking the head node of each graph
-graphs = [nodes[0] for nodes in graphs_full]
+    graphs_full = dataset['graphs_full']
+    branch_samples = dataset['branch_samples']
+    # number of programs, and number of sample paths collected for each program
+    n_progs = len(graphs_full)
+    n_paths = len(branch_samples[0])
+    # taking the head node of each graph
+    graphs = [nodes[0] for nodes in graphs_full]
 
-## make the sample paths non-IMMUTABLE here
-for i in range(n_progs):
-    for j in range(n_paths):
-        branch_samples[i][j].flags.writeable = False
+    ## make the sample paths non-IMMUTABLE here
+    for i in range(n_progs):
+        for j in range(n_paths):
+            branch_samples[i][j].flags.writeable = False
 
-data = {'graphs':graphs, 'branch_samples':branch_samples}
+    data = {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
+    return data
 
 
 # main simulation section
 # recover and save
-def simulate(num_stp, settings, data, policy):
+def simulate(num_stp, settings, data_path, policy):
     """
     :param num_stp: number of iterations
     :param settings: the Settings object, contain hyperparameters of the model
@@ -86,6 +88,7 @@ def simulate(num_stp, settings, data, policy):
     n_skip = settings.n_skip
     beta = settings.beta
     alpha = settings.alpha
+    data = load_data(data_path)
     graphs = data['graphs']
     branch_samples = data['branch_samples']
     n_progs = len(graphs)
@@ -248,11 +251,15 @@ def policy_fcfs(M, settings, job_sizes, arrival_orders, fix=-1):
 if __name__ == '__main__':
     #np.random.seed(0)
     settings1 = Settings(n_skip=30, M = 100, alpha=0.5, beta=1.5)
-    # for node in graphs_full[0]:
-    #     print('node id={}, size={}'.format(node.id, node.size))
+
     static_best_fit = partial(policy_best_fit, fix=20)
     static_fcfs = partial(policy_fcfs, fix=20)
-    count_comp, t_glob = simulate(3*10**5, settings1, data, static_fcfs)
+
+    dataset_dir = './datasets'
+    dataset_name = 'sequential.pkl'
+    data_path = os.path.join(dataset_dir, dataset_name)
+
+    count_comp, t_glob = simulate(3*10**5, settings1, data_path, static_fcfs)
     print(count_comp / t_glob)
 
     # timing analysis: n_skip=30, M = 100, alpha=0.5, beta=1.5, sequential 30 phase
