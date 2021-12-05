@@ -3,11 +3,13 @@ Code for 15-740 project, simulation part. author Yige Hong
 
 To-do list:
 #1 generate data set
-2 write save and load
+#2 write save and load
 #3 reduce the frequency of generating random variables
 #4 debugging
 #5 other optimizations
 #6 fix random seeds
+7 read data and generate datasets
+8 debug branches
 """
 
 import numpy as np
@@ -48,7 +50,7 @@ Settings = namedtuple('Settings', ['n_skip', 'M', 'alpha', 'beta'])
 
 # loading inputs: annotated graphs, list of branch decisions
 
-def load_data(data_path):
+def load_pkl_data(data_path):
     """
     :param data_path: the path for dataset
     :return: graphs = [] * n_progs, branch_samples = [[]*n_paths] * n_progs
@@ -72,6 +74,35 @@ def load_data(data_path):
     data = {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
     return data
 
+def load_str_data(data_path):
+    """
+    :param data_path: here data_path is a directory, with subdirs data_path/Graphs and data_path/Samples
+    :return: data
+    """
+    graph_dir = os.path.join(data_path, 'Graphs')
+    sample_dir = os.path.join(data_path, 'Samples')
+    # look for all subdirs
+    graph_files_names = os.listdir(graph_dir)
+    graph_names = [name[:-4] for name in graph_files_names if name.endswith('.txt')]
+    graphs_full = []
+    branch_samples = []
+    for name in graph_names:
+        with open(name, 'r') as f:
+            line = f.readline()
+            graph_dict = eval(line)
+            n_nodes = len(graph_dict)
+            nodes = [Graph_Node(i, graph_dict[i][0]) for i in range(n_nodes)]
+            for i in range(n_nodes):
+                nodes[i].branches = graph_dict[i][1]
+        with open(name + '_sample', 'r') as f:
+            lines = f.readlines()
+            samples = [np.array(eval(line)) for line in lines]
+            for sample in samples:
+                sample.flags.writeable = False
+        graphs_full.append(nodes)
+        branch_samples.append(samples)
+    graphs = [nodes[0] for nodes in graphs_full] ## assume id-0 is the head node
+    return {'graphs':graphs, 'branch_samples':branch_samples, 'graphs_full': graphs_full}
 
 # main simulation section
 # recover and save
@@ -88,7 +119,7 @@ def simulate(num_stp, settings, data_path, policy):
     n_skip = settings.n_skip
     beta = settings.beta
     alpha = settings.alpha
-    data = load_data(data_path)
+    data = load_pkl_data(data_path)
     graphs = data['graphs']
     branch_samples = data['branch_samples']
     n_progs = len(graphs)
