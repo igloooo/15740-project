@@ -10,7 +10,7 @@ To-do list:
 #6 fix random seeds
 #7 read data and generate datasets
 #8 debug branches
-9 look closely at his program!
+9 bias the branch probabilities
 """
 
 import numpy as np
@@ -24,7 +24,7 @@ import logging
 from functools import partial
 from time import time
 from classes import *
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 
 EPS = 1e-7
@@ -102,7 +102,6 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
             ### I make "nodes" a dictionary instead of list, I hope it will not cause any bug
             nodes = dict([(id, Graph_Node(id, graph_dict[id][0])) for id in graph_dict.keys()])
             for id, node in nodes.items():
-                #print(id, node, graph_dict[id][1])
                 node.branches = [nodes[next_id] for next_id in graph_dict[id][1] if next_id is not None]
         if gen_n_samples < 0:###
             with open(name + '_sample', 'r') as f:
@@ -119,9 +118,12 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
                 seq = []
                 while(cur_node.id >= 0):
                     # branch with equal probability
+                    ### if next_branch < cur_branch, bias with a high prob
                     next_branch = np.random.randint(0, len(cur_node.branches))
                     seq.append(next_branch)
+                    #print('({})--{}-->'.format(cur_node.id, next_branch), end='')
                     cur_node = cur_node.branches[next_branch]
+                #print()
                 seq = np.array(seq)
                 seq.flags.writeable = False
                 samples.append(seq)
@@ -197,11 +199,11 @@ def simulate(num_stp, settings, data_path, policy, record_per_count, json_loader
         # update memory allocation
         cur_mem = policy(M, settings, job_sizes, [job_orders, head_node, tail_node]) # this is specific to each policy
         ## logging lines for debug
-        #if cur_stp > 0:
-        #     order_str = traverse_ids(head_node, n_skip)
-        #     logging.info('cur_stp={}, last event={}, \n cur_order={}, \n job_sizes={}, \n cur_mem={}'.format(cur_stp, i, order_str, job_sizes, cur_mem))
-        #     job_states = [node.id for node in job_nodes]
-        #     logging.info('cur states={}, last event={}'.format(job_states, i))
+        # if cur_stp > 0:
+            # order_str = traverse_ids(head_node, n_skip)
+            # logging.info('cur_stp={}, last event={}, \n cur_order={}, \n job_sizes={}, \n cur_mem={}'.format(cur_stp, i, order_str, job_sizes, cur_mem))
+            # job_states = [node.id for node in job_nodes]
+            # logging.info('cur states={}, last event={}'.format(job_states, i))
         # compute rate
         speedups = np.clip(cur_mem-alpha * job_sizes, EPS, np.maximum((beta-alpha)*job_sizes, EPS))
         #print(job_sizes, speedups)
@@ -257,8 +259,8 @@ def simulate(num_stp, settings, data_path, policy, record_per_count, json_loader
                 order_node.next = None
                 tail_node = order_node
             ### logging lines for debug
-            # logging.warning('restart job {}, counter = {}, t={}, new path={}'.format(
-            #     i, count_comp, t_glob, job_paths[i]))
+            # logging.warning('restart job {}, counter = {}, t={}, (program, path)={}'.format(
+            #     i, count_comp, t_glob, (job_types[i], new_path_ind)))
             # order_str = traverse_ids(head_node, n_skip)
             # logging.warning('current order {}'.format(order_str))
     # print(count_comp, ts)
@@ -335,12 +337,12 @@ if __name__ == '__main__':
 
     static_best_fit = partial(policy_best_fit, fix=6)
     static_fcfs = partial(policy_fcfs, fix=6)
-    total_time = 10**6
+    total_time = 10**3
 
     # dataset_dir = './datasets'
     # dataset_name = 'sequential.pkl'
     # data_path = os.path.join(dataset_dir, dataset_name)
-    data_path = '../Project'
+    data_path = '.'
 
     if not os.path.exists('./checkpoints'):
         os.mkdir('./checkpoints')
@@ -353,26 +355,26 @@ if __name__ == '__main__':
     plt.plot(t_globs, count_comps / t_globs)
     plt.show()
 
-    time_begin = time()
-    t_globs, count_comps = simulate(total_time, settings1, data_path, static_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    time_end = time()
-    print('time = ', time_end - time_begin)
-    print('throughput = ', count_comps[-1] / t_globs[-1])
-    plt.plot(t_globs, count_comps / t_globs)
-    plt.show()
-
-    time_begin = time()
-    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    time_end = time()
-    print('time = ', time_end - time_begin)
-    print('throughput = ', count_comps[-1] / t_globs[-1])
-    plt.plot(t_globs, count_comps / t_globs)
-    plt.show()
-
-    time_begin = time()
-    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    time_end = time()
-    print('time = ', time_end - time_begin)
-    print('throughput = ', count_comps[-1] / t_globs[-1])
-    plt.plot(t_globs, count_comps / t_globs)
-    plt.show()
+    # time_begin = time()
+    # t_globs, count_comps = simulate(total_time, settings1, data_path, static_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    # time_end = time()
+    # print('time = ', time_end - time_begin)
+    # print('throughput = ', count_comps[-1] / t_globs[-1])
+    # plt.plot(t_globs, count_comps / t_globs)
+    # plt.show()
+    #
+    # time_begin = time()
+    # t_globs, count_comps = simulate(total_time, settings1, data_path, policy_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    # time_end = time()
+    # print('time = ', time_end - time_begin)
+    # print('throughput = ', count_comps[-1] / t_globs[-1])
+    # plt.plot(t_globs, count_comps / t_globs)
+    # plt.show()
+    #
+    # time_begin = time()
+    # t_globs, count_comps = simulate(total_time, settings1, data_path, policy_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    # time_end = time()
+    # print('time = ', time_end - time_begin)
+    # print('throughput = ', count_comps[-1] / t_globs[-1])
+    # plt.plot(t_globs, count_comps / t_globs)
+    # plt.show()
