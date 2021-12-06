@@ -27,7 +27,8 @@ from classes import *
 logging.basicConfig(level=logging.INFO)
 
 
-EPS = 1e-7
+EPS = 1e-6
+loop_bias = 0.7
 
 # hyper parameter section, global var or static object
 Settings = namedtuple('Settings', ['n_skip', 'M', 'alpha', 'beta'])
@@ -117,9 +118,23 @@ def load_json_data(data_path, cp_path=None, gen_n_samples=-1):
                 cur_node = nodes[0]
                 seq = []
                 while(cur_node.id >= 0):
-                    # branch with equal probability
-                    ### if next_branch < cur_branch, bias with a high prob
-                    next_branch = np.random.randint(0, len(cur_node.branches))
+
+                    if (len(cur_node.branches) > 1):
+                        # branch with equal probability
+                        ### if next_branch < cur_branch, bias with a high prob
+                        fst = cur_node.id > cur_node.branches[0].id
+                        snd = cur_node.id > cur_node.branches[1].id
+
+                        if (fst):
+                            next_branch = np.random.binomial(1, 1-loop_bias)
+                        elif (snd):
+                            next_branch = np.random.binomial(1, loop_bias)
+                        else:
+                            next_branch = np.random.binomial(1, 0.5)
+
+                    else:
+                        next_branch = 0
+                        #next_branch = np.random.randint(0, len())
                     seq.append(next_branch)
                     #print('({})--{}-->'.format(cur_node.id, next_branch), end='')
                     cur_node = cur_node.branches[next_branch]
@@ -332,49 +347,53 @@ def policy_fcfs(M, settings, job_sizes, arrival_orders, fix=-1):
 
 
 if __name__ == '__main__':
-    #np.random.seed(0)
+    np.random.seed(0)
     settings1 = Settings(n_skip=30, M = 20, alpha=0.5, beta=1.5)
 
     static_best_fit = partial(policy_best_fit, fix=6)
     static_fcfs = partial(policy_fcfs, fix=6)
-    total_time = 10**3
+    total_time = 10**6
 
     # dataset_dir = './datasets'
     # dataset_name = 'sequential.pkl'
     # data_path = os.path.join(dataset_dir, dataset_name)
-    data_path = '.'
+    data_path = './checkpoints/cp.pkl'
 
     if not os.path.exists('./checkpoints'):
         os.mkdir('./checkpoints')
 
     time_begin = time()
-    t_globs, count_comps = simulate(total_time, settings1, data_path, static_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
+    t_globs, count_comps = simulate(total_time, settings1, data_path, static_best_fit, record_per_count=1 # json_loader=['./checkpoints/cp.pkl', 200]
+                                    )
     time_end = time()
     print('time = ', time_end - time_begin)
     print('throughput = ', count_comps[-1] / t_globs[-1])
     plt.plot(t_globs, count_comps / t_globs)
     plt.show()
 
-    # time_begin = time()
-    # t_globs, count_comps = simulate(total_time, settings1, data_path, static_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    # time_end = time()
-    # print('time = ', time_end - time_begin)
-    # print('throughput = ', count_comps[-1] / t_globs[-1])
-    # plt.plot(t_globs, count_comps / t_globs)
-    # plt.show()
-    #
-    # time_begin = time()
-    # t_globs, count_comps = simulate(total_time, settings1, data_path, policy_best_fit, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    # time_end = time()
-    # print('time = ', time_end - time_begin)
-    # print('throughput = ', count_comps[-1] / t_globs[-1])
-    # plt.plot(t_globs, count_comps / t_globs)
-    # plt.show()
-    #
-    # time_begin = time()
-    # t_globs, count_comps = simulate(total_time, settings1, data_path, policy_fcfs, record_per_count=10, json_loader=['./checkpoints/cp.pkl', 200])
-    # time_end = time()
-    # print('time = ', time_end - time_begin)
-    # print('throughput = ', count_comps[-1] / t_globs[-1])
-    # plt.plot(t_globs, count_comps / t_globs)
-    # plt.show()
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, static_fcfs, record_per_count=1 # json_loader=['./checkpoints/cp.pkl', 200]
+                                    )
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
+
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_best_fit, record_per_count=1# , json_loader=['./checkpoints/cp.pkl', 200]
+                                    )
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
+
+    time_begin = time()
+    t_globs, count_comps = simulate(total_time, settings1, data_path, policy_fcfs, record_per_count=1# , json_loader=['./checkpoints/cp.pkl', 200]
+                                    )
+    time_end = time()
+    print('time = ', time_end - time_begin)
+    print('throughput = ', count_comps[-1] / t_globs[-1])
+    plt.plot(t_globs, count_comps / t_globs)
+    plt.show()
